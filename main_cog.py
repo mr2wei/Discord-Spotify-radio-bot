@@ -11,6 +11,7 @@ class main_cog(commands.Cog):
 `R!skip` to skip the curent song (it is a little finnicky)
 `R!loop` loops the whole queue including songs that have already played
 `R!loopcurrent` loops the current song
+`R!shuffle` shuffles the whole queue
 `R!queue` displays upcoming music or the whole queue if loop is on
 `R!lyrics` to get lyrics for the current song
 """)

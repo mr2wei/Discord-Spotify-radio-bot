@@ -1,6 +1,5 @@
 import discord
 from discord.ext import commands
-from matplotlib.image import thumbnail
 from Spotify import Spotify
 from random import randint, shuffle
 import asyncio
@@ -183,71 +182,78 @@ class music_cog(commands.Cog):
             await ctx.message.add_reaction("📜")
         else:
             await ctx.send("No music in queue")
-
-    
+  
     @commands.command(name="skip", help="Skips the current song being played")
     async def skip(self, ctx):
         try:
-            server = ctx.message.guild
-            voice_channel = server.voice_client
-            voice_channel.stop()
-            #try to play next in the queue if it exists
-            await self.play_music(ctx)
-            await ctx.message.add_reaction("⏩")
+            if ctx.author.voice.channel == self.current_song[1]:
+                server = ctx.message.guild
+                voice_channel = server.voice_client
+                voice_channel.stop()
+                #try to play next in the queue if it exists
+                await self.play_music(ctx)
+                await ctx.message.add_reaction("⏩")
+            else: 
+                await ctx.send("Are you in the voice channel? 🧐")
         except AttributeError:
             await ctx.send("Are you in the voice channel? 🧐")
-
-            
+          
     @commands.command(name="disconnect", help="Disconnecting bot from VC")
     async def dc(self, ctx):
-        server = ctx.message.guild
-        voice_channel = server.voice_client
-        await ctx.send(self.goodbye_quotes[randint(0,len(self.goodbye_quotes)-1)])
-        voice_channel.stop()
-        #resets variables
-        self.vc = ""
-        self.history = []
-        self.music_queue = []
-        self.is_loop_current = False
-        self.is_loop = False
-        self.current_song = {}
-        await voice_channel.disconnect()
-        await ctx.message.add_reaction("⏹")
-        
-        
-
+        if ctx.author.voice.channel == self.current_song[1]:
+            server = ctx.message.guild
+            voice_channel = server.voice_client
+            await ctx.send(self.goodbye_quotes[randint(0,len(self.goodbye_quotes)-1)])
+            voice_channel.stop()
+            #resets variables
+            self.vc = ""
+            self.history = []
+            self.music_queue = []
+            self.is_loop_current = False
+            self.is_loop = False
+            self.current_song = {}
+            await voice_channel.disconnect()
+            await ctx.message.add_reaction("⏹")
+        else:
+            await ctx.send("Are you in the voice channel? 🧐")
     @commands.command(name="pause", help="Pausing the song")
     async def pause(self, ctx):
         try:
-            server = ctx.message.guild
-            voice_channel = server.voice_client
-            #if the bot is playing and is not paused
-            if voice_channel.is_playing() and not voice_channel.is_paused():
-                voice_channel.pause()
-                await ctx.send("Paused")
-                await ctx.message.add_reaction("⏸")
-            else:
-                await ctx.send("Already paused... or am i even there 🤔")
+            if ctx.author.voice.channel == self.current_song[1]:
+                server = ctx.message.guild
+                voice_channel = server.voice_client
+                #if the bot is playing and is not paused
+                if voice_channel.is_playing() and not voice_channel.is_paused():
+                    voice_channel.pause()
+                    await ctx.send("Paused")
+                    await ctx.message.add_reaction("⏸")
+                else:
+                    await ctx.send("Already paused")
+            else: 
+                await ctx.send("Are you in the voice channel? 🧐")
         except AttributeError:
             await ctx.send("Are you in the voice channel? 🧐")
 
     @commands.command(name="resume", help="Resuming the song")
     async def resume(self, ctx):
         try:
-            server = ctx.message.guild
-            voice_channel = server.voice_client
-            if voice_channel.is_paused():
-                voice_channel.resume()
-                await ctx.send("Resuming")
-                await ctx.message.add_reaction("▶")
+            if ctx.author.voice.channel == self.current_song[1]:
+                server = ctx.message.guild
+                voice_channel = server.voice_client
+                if voice_channel.is_paused():
+                    voice_channel.resume()
+                    await ctx.send("Resuming")
+                    await ctx.message.add_reaction("▶")
+                else:
+                    await ctx.send("Still playing... or am i even there 🤔")
             else:
-                await ctx.send("Still playing... or am i even there 🤔")
+                await ctx.send("Are you in the voice channel? 🧐")
         except AttributeError:
             await ctx.send("Are you in the voice channel? 🧐")
     
     @commands.command(name = 'radio', help = "Uses spotify's recommendation API to auto add similar songs based on current songs")
     async def radio(self, ctx):
-        if len(self.history) > 0:
+        if len(self.history) > 0 and ctx.author.voice.channel == self.current_song[1]:
             spotify_id_history = []
             #copy the spotify ids of the songs in self.history
             for song in self.history:
@@ -283,7 +289,7 @@ class music_cog(commands.Cog):
 
     @commands.command(name= 'loop', help = 'Loop the songs you have fed the bot')
     async def loop(self, ctx):
-        if len(self.history) > 0:
+        if len(self.history) > 0 and ctx.author.voice.channel == self.current_song[1]:
             self.is_loop = True
             await ctx.send("Loop is on")
             await ctx.message.add_reaction("🔁")
@@ -292,7 +298,7 @@ class music_cog(commands.Cog):
 
     @commands.command(name = 'loopcurrent', help = 'Loop current song')
     async def loop_current(self, ctx):
-        if bool(self.current_song):
+        if bool(self.current_song) and ctx.author.voice.channel == self.current_song[1]:
             self.is_loop_current = True
             if self.current_song not in self.music_queue:
                 self.music_queue.insert(0, self.current_song)
@@ -303,13 +309,13 @@ class music_cog(commands.Cog):
 
     @commands.command(name = "shuffle", help = "shuffles the queue")
     async def shuffle_queue(self, ctx):
-        if len(self.music_queue) > 0 or len(self.history) > 0:
+        if (len(self.music_queue) > 0 or len(self.history) > 0) and ctx.author.voice.channel == self.current_song[1]:
             self.is_shuffle = True
             shuffle(self.music_queue)
             await ctx.send("Shuffling")
             await ctx.message.add_reaction("🔀")
         else:
-            await ctx.send("Theres no songs in the queue!")
+            await ctx.send("Theres no songs in the queue! Or you're not in the voice channel **:**|")
     
 
     

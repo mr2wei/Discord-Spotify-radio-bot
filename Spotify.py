@@ -1,4 +1,3 @@
-from numpy import place
 import requests
 from bs4 import BeautifulSoup
 import tekore as tk
