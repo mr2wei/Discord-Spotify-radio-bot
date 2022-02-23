@@ -1,9 +1,9 @@
+from turtle import pos, position
 import discord
 from discord.ext import commands
 from Spotify import Spotify
 from random import randint, shuffle
 import asyncio
-from threading import Thread, Timer
 
 
 class music_cog(commands.Cog):
@@ -26,24 +26,40 @@ class music_cog(commands.Cog):
         #current voice channel
         self.vc = ""
 
-    async def search(self, query):
-        track = await self.spotify.search(query)
-        if not track:
-            return False
-        #i chose to search song title and artist name to eliminate possibility of the bot playing a random youtube video
-        youtube_link = self.spotify.search_youtube(f"{track.name} {track.artists[0].name}")
-        seconds, milliseconds = divmod(track.duration_ms, 1000)
-        minutes, seconds = divmod(seconds, 60)
-        return {
-            'source': youtube_link, 
-            'title': f"{track.name} by {track.artists[0].name}", 
-            'thumbnail': track.album.images[0].url, 
-            'duration': f'{int(minutes):02d}:{int(seconds):02d}', 
-            'duration_ms': track.duration_ms, 
-            'trackname': track.name, 
-            'artist': track.artists[0].name, 
-            'spotify_id': track.uri.split(':')[-1]
-        }        
+    async def search(self, query, spotify = True):
+        if spotify:
+            track = await self.spotify.search(query)
+            if not track:
+                return False
+            #i chose to search song title and artist name to eliminate possibility of the bot playing a random youtube video
+            youtube_link = self.spotify.search_youtube(f"{track.name} {track.artists[0].name}")['formats'][0]['url']
+            seconds, milliseconds = divmod(track.duration_ms, 1000)
+            minutes, seconds = divmod(seconds, 60)
+            song = {
+                'source': youtube_link, 
+                'title': f"{track.name} by {track.artists[0].name}", 
+                'thumbnail': track.album.images[0].url, 
+                'duration': f'{int(minutes):02d}:{int(seconds):02d}', 
+                'duration_ms': track.duration_ms, 
+                'trackname': track.name, 
+                'artist': track.artists[0].name, 
+                'spotify_id': track.uri.split(':')[-1]
+            }
+        else:
+            track = self.spotify.search_youtube(query, True)
+            if not track:
+                return False
+            song = {
+                'source': track['formats'][0]['url'], 
+                'title': track['title'], 
+                'thumbnail': r"https://upload.wikimedia.org/wikipedia/commons/thumb/7/72/YouTube_social_white_square_%282017%29.svg/2048px-YouTube_social_white_square_%282017%29.svg.png", 
+                'duration': "N/A", 
+                'duration_ms': 0, 
+                'trackname': track['title'], 
+                'artist': 'youtube', 
+                'spotify_id': None
+            }
+        return song
 
     async def add_from_playlist(self, ctx, playlist, voice_channel):
         await self.bot.wait_until_ready()
@@ -70,7 +86,7 @@ class music_cog(commands.Cog):
             self.music_queue.append([song, voice_channel])
             self.history.append([song, voice_channel])
             progress = int((index + 1)/(len(playlist.tracks.items)/100))
-            embed = discord.Embed(title = f"Adding from playlist: {playlist.name}", description = f"playlist.owner.display_name\n[{'#' * int(progress/10)}{'-'* (10 - int(progress/10))}] {progress}%")
+            embed = discord.Embed(title = f"Adding from playlist: {playlist.name}", description = f"{playlist.owner.display_name}\n[{'#' * int(progress/10)}{'-'* (10 - int(progress/10))}] {progress}%")
             embed.set_thumbnail(url = playlist.images[0].url)
             embed.set_footer(text = "Requested by " + ctx.author.display_name)  
             await message.edit(embed = embed)
@@ -115,7 +131,7 @@ class music_cog(commands.Cog):
             embed.set_thumbnail(url = song['thumbnail'])
             await ctx.send(embed = embed)
 
-    @commands.command(name="play", help="Plays a selected song from youtube")
+    @commands.command(aliases = ['play'], help="Plays a selected song from youtube")
     async def p(self, ctx, *args, internal = False):
         query = " ".join(args)
         if query == "" and len(self.music_queue) > 0:
@@ -141,9 +157,12 @@ class music_cog(commands.Cog):
                 elif not self.vc.is_playing():
                     await self.play_music(ctx)
             else:
-                song = await self.search(query)
-                if type(song) == type(True):
-                    await ctx.send(f"Could not find any songs matching {query}")
+                if "youtube.com/watch" in query:
+                    song = await self.search(query, False)
+                else:
+                    song = await self.search(query)
+                if song == False:
+                    await ctx.send(f"Could not find {query}")
                 else:
                     if not internal:
                         #create the embed message (add to queue message)
@@ -159,7 +178,7 @@ class music_cog(commands.Cog):
                     elif not self.vc.is_playing():
                         await self.play_music(ctx)
     
-    @commands.command(name="queue", help="Displays the current songs in queue")
+    @commands.command(aliases = ['queue'], help="Displays the current songs in queue")
     async def q(self, ctx):
         retval = ""
         playtime = 0
@@ -183,22 +202,21 @@ class music_cog(commands.Cog):
         else:
             await ctx.send("No music in queue")
   
-    @commands.command(name="skip", help="Skips the current song being played")
-    async def skip(self, ctx):
+    @commands.command(aliases = ['skip'], help="Skips the current song being played")
+    async def s(self, ctx):
         try:
             if ctx.author.voice.channel == self.current_song[1]:
                 server = ctx.message.guild
                 voice_channel = server.voice_client
                 voice_channel.stop()
                 #try to play next in the queue if it exists
-                await self.play_music(ctx)
                 await ctx.message.add_reaction("⏩")
             else: 
                 await ctx.send("Are you in the voice channel? 🧐")
         except AttributeError:
             await ctx.send("Are you in the voice channel? 🧐")
           
-    @commands.command(name="disconnect", help="Disconnecting bot from VC")
+    @commands.command(aliases = ['disconnect', 'die', 'leave', 'stop'], help="Disconnecting bot from VC")
     async def dc(self, ctx):
         if ctx.author.voice.channel == self.current_song[1]:
             server = ctx.message.guild
@@ -209,6 +227,7 @@ class music_cog(commands.Cog):
             self.vc = ""
             self.history = []
             self.music_queue = []
+            print(self.music_queue)
             self.is_loop_current = False
             self.is_loop = False
             self.current_song = {}
@@ -216,6 +235,7 @@ class music_cog(commands.Cog):
             await ctx.message.add_reaction("⏹")
         else:
             await ctx.send("Are you in the voice channel? 🧐")
+    
     @commands.command(name="pause", help="Pausing the song")
     async def pause(self, ctx):
         try:
@@ -259,7 +279,11 @@ class music_cog(commands.Cog):
             for song in self.history:
                 spotify_id_history.append(song[0]['spotify_id'])
             #get the last 5 song's spotify id
+            spotify_id_history = [i for i in spotify_id_history if i]
             last_five = spotify_id_history[-5:]
+            if len(last_five) == 0:
+                await ctx.send("No spotify songs added, cannot create recommendations")
+                return
             if len(self.history) < 3:
                 await ctx.send("For better recommendations, try adding 5 songs")
             recommendations = await self.spotify.get_recommendations(last_five) #this is an object (well that's what i'd describe it as) it returns a list? dictionary? of recommended tracks from spotify
@@ -281,29 +305,38 @@ class music_cog(commands.Cog):
                 await ctx.send("Could not find lyrics for the current song")
             else:
                 embed = discord.Embed(title = f"Lyrics: {self.current_song[0]['title']}", description = lyrics)
-                embed.set_footer(text = "lyrics by genius.com (the format is screwed but I can't be bothered)")
+                embed.set_footer(text = "lyrics by genius.com")
                 await ctx.send(embed = embed)
-                await ctx.message.add_reation("🎤")
+                await ctx.message.add_reaction("🎤")
         else:
             await ctx.send("There is no song playing at the moment")
 
-    @commands.command(name= 'loop', help = 'Loop the songs you have fed the bot')
-    async def loop(self, ctx):
+    @commands.command(aliases = ['loop'], help = 'Loop the songs you have fed the bot')
+    async def l(self, ctx):
         if len(self.history) > 0 and ctx.author.voice.channel == self.current_song[1]:
-            self.is_loop = True
-            await ctx.send("Loop is on")
-            await ctx.message.add_reaction("🔁")
+            if not self.is_loop:
+                self.is_loop = True
+                await ctx.send("Loop is on")
+                await ctx.message.add_reaction("🔁")
+            else:
+                self.is_loop = False
+                await ctx.send("Loop is off")
+                await ctx.message.add_reaction("➡")
         else:
             await ctx.send("You haven't added any songs to queue")
 
-    @commands.command(name = 'loopcurrent', help = 'Loop current song')
-    async def loop_current(self, ctx):
+    @commands.command(aliases = ['loopcurrent'], help = 'Loop current song')
+    async def lc(self, ctx):
         if bool(self.current_song) and ctx.author.voice.channel == self.current_song[1]:
-            self.is_loop_current = True
-            if self.current_song not in self.music_queue:
+            if not self.is_loop_current:
+                self.is_loop_current = True
                 self.music_queue.insert(0, self.current_song)
-            await ctx.send("Looping current song")
-            await ctx.message.add_reaction("🔂")
+                await ctx.send("Looping current song")
+                await ctx.message.add_reaction("🔂")
+            else:
+                self.is_loop_current = False
+                await ctx.send("Loop is off")
+                await ctx.message.add_reaction("➡")
         else:
             await ctx.send("There is no song playing")
 
@@ -312,10 +345,95 @@ class music_cog(commands.Cog):
         if (len(self.music_queue) > 0 or len(self.history) > 0) and ctx.author.voice.channel == self.current_song[1]:
             self.is_shuffle = True
             shuffle(self.music_queue)
+            if self.is_loop_current or self.is_loop:
+                seperator = self.history.index(self.current_song) + 1
+                self.history[seperator:] = self.music_queue.copy()
             await ctx.send("Shuffling")
             await ctx.message.add_reaction("🔀")
         else:
             await ctx.send("Theres no songs in the queue! Or you're not in the voice channel **:**|")
-    
 
+    @commands.command(aliases = ['pn', 'pnext'], help = "Adds the song to the front of the queue instead")
+    async def playnext(self, ctx, *args):
+        if ctx.author.voice.channel != self.current_song[1]:
+            await ctx.send("You're not in the voice channel!")
+            return
+        query = " ".join(args)
+        if "open.spotify.com/playlist" in query:
+            await ctx.send("Playlists are not supported with this command")
+        await self.p(ctx, query)
+        self.music_queue.insert(0, self.music_queue.pop(-1))
+
+    @commands.command(aliases = ['move'], help = "Move songs within the queue")
+    async def m(self, ctx, *args):
+        if ctx.author.voice.channel != self.current_song[1]:
+            await ctx.send("You're not in the voice channel!")
+            return 
+        args = list(args)
+        if type(args) != tuple or len(args) == 0 or args[0] == "help":
+            await ctx.send("To use R!move, type R!move <index of song you want to move> <index to move to>")
+        try: 
+            args[0], args[1] = int(args[0]), int(args[1])
+        except ValueError:
+            await ctx.send("To use R!move, type R!move <index of song you want to move> <index to move to>")
+
+        
+        try:
+            if args[0] == args[1]:
+                await ctx.send("Can't move song to the same position")
+            elif self.is_loop or self.is_loop_current:
+                if self.history[args[0]-1] == self.current_song:
+                    await ctx.send("Can't move current song")
+                else:
+                    self.history.insert(args[1] - 1, self.history.pop(args[0]-1))
+                    seperator = self.history.index(self.current_song)
+                    self.music_queue = self.history[seperator + 1:].copy()
+                    await ctx.send("Moving")
+            else:
+                self.music_queue.insert(args[1] - 1, self.music_queue.pop(args[0]-1))
+                await ctx.send("Moving")
+        except IndexError:
+            await ctx.send("One of your arguments is out of the queue's range")
+
+    @commands.command(aliases = ["jump"], help = "Jumps to a specific location in the queue")
+    async def jumpto(self, ctx, *args):
+        args = ''.join(args)
+        if ctx.author.voice.channel != self.current_song[1]:
+            await ctx.send("You're not in the voice channel!")
+            return
     
+        try:
+            position = int(args)
+            if position < 1:
+                await ctx.send("That's out of range!")
+            elif not self.is_loop or not self.is_loop_current:
+                self.music_queue = self.music_queue[position - 1:]
+                await self.s(ctx)
+            else:
+                self.music_queue = self.history[position -1 :]
+                await self.s(ctx)
+        except ValueError:
+            await ctx.send("R!jump <queue number> to jump to that song")
+        except IndexError:
+            await ctx.send("That's out of range!")
+
+    @commands.command(aliases = ['re', 'delete', 'del'], help = "Remove from queue")
+    async def remove(self, ctx, *args):
+        args = ''.join(args)
+        if ctx.author.voice.channel != self.current_song[1]:
+            await ctx.send("You're not in the voice channel!")
+            return
+        
+        try:
+            position = int(args)
+            if position < 1:
+                await ctx.send("That's out of range!")
+            elif not self.is_loop or not self.is_loop_current:
+                self.music_queue.pop(position - 1)
+            else:
+                self.history.pop(position -1)
+                self.music_queue.pop(position - 1)
+        except ValueError:
+            await ctx.send("R!remove <queue number> to remove the song")
+        except IndexError:
+            await ctx.send("That's out of range!")

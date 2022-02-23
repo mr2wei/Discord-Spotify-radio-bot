@@ -20,14 +20,17 @@ class Spotify:
         except IndexError:
             return False
 
-    def search_youtube(self, query): #i copied to guide for this
+    def search_youtube(self, query, link = False): #i copied to guide for this
         with YoutubeDL(self.YDL_OPTIONS) as ydl:
             try: 
-                info = ydl.extract_info("ytsearch:%s" % query, download=False)['entries'][0]
+                if link:
+                    info = ydl.extract_info(query, download = False)
+                else:
+                    info = ydl.extract_info("ytsearch:%s" % query, download=False)['entries'][0]
             except Exception: 
                 return False
 
-        return info['formats'][0]['url']
+        return info
     
     async def get_recommendations(self, spotify_ids: list): #spotify ids max length 5
         recommendations = await self.spotify.recommendations(track_ids= spotify_ids, limit = 20)
@@ -51,10 +54,12 @@ class Spotify:
         page = requests.get(f'https://genius.com/{artist_name}-{track_name}-lyrics')
         html = BeautifulSoup(page.text, 'html.parser')
         #this could cause problems in the future but my bot scrapes the genius website. I should find alternatives :|
-        lyrics = html.find("div", {'data-lyrics-container' : "true"})
+        lyrics = html.find_all("div", {'data-lyrics-container' : "true"})
+        full_lyrics = []
         if lyrics:
-            lyrics = lyrics.get_text(separator= '\n')
-            return lyrics
+            for lyric_parts in lyrics:
+                full_lyrics.append(lyric_parts.get_text(separator= '\n'))
+            return '\n'.join(full_lyrics)
         else:
             return None
     
@@ -69,5 +74,5 @@ if __name__ == "__main__":
     #this is just for me to test the functions
     import asyncio
     spotify = Spotify()
-    print(spotify.get_lyrics({'trackname': 'Less Than Zero', 'artist': 'The Weeknd'}))
+    print(spotify.search_youtube("https://www.youtube.com/watch?v=_nQMRuVwzhY", True))
     
