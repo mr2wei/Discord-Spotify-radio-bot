@@ -1,4 +1,3 @@
-from turtle import pos, position
 import discord
 from discord.ext import commands
 from Spotify import Spotify
@@ -10,10 +9,10 @@ class music_cog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-        self.goodbye_quotes = ["“It is hard to say goodbye to someone with whom you spend so many years”", "“It is hard but you have to say goodbye because to start a new chapter in life you have to end the previous chapter”", "“Farewell doesn't mean that you will not see each other but it means that you will meet again and create more memories”", "“It doesn’t matter if today we are going on a different journey but I promise you that I will meet you again no matter how far you are”", "“It is not ending it is the beginning so smile and say goodbye”", "“To move forward in life you have to say goodbye if you can’t say goodbye you will never able to move forward”", "“Goodbye, but you will always be in my memories and I will always treasure the memories that I created with you”", "“In every goodbye, there is a secret message that is we will miss you until you come back”"]
+        self.GOODBYE_QUOTES = ["“It is hard to say goodbye to someone with whom you spend so many years”", "“It is hard but you have to say goodbye because to start a new chapter in life you have to end the previous chapter”", "“Farewell doesn't mean that you will not see each other but it means that you will meet again and create more memories”", "“It doesn’t matter if today we are going on a different journey but I promise you that I will meet you again no matter how far you are”", "“It is not ending it is the beginning so smile and say goodbye”", "“To move forward in life you have to say goodbye if you can’t say goodbye you will never able to move forward”", "“Goodbye, but you will always be in my memories and I will always treasure the memories that I created with you”", "“In every goodbye, there is a secret message that is we will miss you until you come back”"]
 
         self.spotify = Spotify()
-
+ 
         #according to a guide https://www.youtube.com/watch?v=i0nNPidYQ2w&t=6s 2d array with song and channel
         self.history = [] 
         self.music_queue = []
@@ -27,12 +26,14 @@ class music_cog(commands.Cog):
         self.vc = ""
 
     async def search(self, query, spotify = True):
+        #if we want to search spotify
         if spotify:
             track = await self.spotify.search(query)
             if not track:
                 return False
             #i chose to search song title and artist name to eliminate possibility of the bot playing a random youtube video
             youtube_link = self.spotify.search_youtube(f"{track.name} {track.artists[0].name}")['formats'][0]['url']
+            #for displaying the duration
             seconds, milliseconds = divmod(track.duration_ms, 1000)
             minutes, seconds = divmod(seconds, 60)
             song = {
@@ -69,7 +70,7 @@ class music_cog(commands.Cog):
         message = await ctx.send(embed = embed)
         await ctx.send("If music doesn't start after 5 seconds type R!play to force it to play")
         for index, track in enumerate(playlist.tracks.items):
-            youtube_link = self.spotify.search_youtube(f"{track.track.name} {track.track.artists[0].name}")
+            youtube_link = self.spotify.search_youtube(f"{track.track.name} {track.track.artists[0].name}")['formats'][0]['url']
             seconds, milliseconds = divmod(track.track.duration_ms, 1000)
             minutes, seconds = divmod(seconds, 60)
             song = {
@@ -88,7 +89,8 @@ class music_cog(commands.Cog):
             progress = int((index + 1)/(len(playlist.tracks.items)/100))
             embed = discord.Embed(title = f"Adding from playlist: {playlist.name}", description = f"{playlist.owner.display_name}\n[{'#' * int(progress/10)}{'-'* (10 - int(progress/10))}] {progress}%")
             embed.set_thumbnail(url = playlist.images[0].url)
-            embed.set_footer(text = "Requested by " + ctx.author.display_name)  
+            embed.set_footer(text = "Requested by " + ctx.author.display_name)
+            #keeps editing the message to update the progress bar  
             await message.edit(embed = embed)
 
     def play_next(self, ctx): #https://discordpy.readthedocs.io/en/latest/faq.html#how-do-i-pass-a-coroutine-to-the-player-s-after-function
@@ -113,8 +115,7 @@ class music_cog(commands.Cog):
                 pass
             else:
                 await self.vc.move_to(self.music_queue[0][1])
-            source = discord.FFmpegPCMAudio(m_url, **self.FFMPEG_OPTIONS)
-            print(self.music_queue)
+            source = discord.FFmpegOpusAudio(m_url, **self.FFMPEG_OPTIONS)
             #remove the first element as you are currently playing it and assign it to current song
             self.current_song = self.music_queue.pop(0)
             #if the user set it to loop current song, it will just reinsert the current song to the front of the queue
@@ -133,6 +134,7 @@ class music_cog(commands.Cog):
 
     @commands.command(aliases = ['play'], help="Plays a selected song from youtube")
     async def p(self, ctx, *args, internal = False):
+        args = list(args)
         query = " ".join(args)
         if query == "" and len(self.music_queue) > 0:
             await self.play_music(ctx)
@@ -157,9 +159,10 @@ class music_cog(commands.Cog):
                 elif not self.vc.is_playing():
                     await self.play_music(ctx)
             else:
-                if "youtube.com/watch" in query:
+                if "youtube.com/watch" in query or "youtu.be/" in query:
                     song = await self.search(query, False)
                 else:
+                    #sanitizing the input
                     song = await self.search(query)
                 if song == False:
                     await ctx.send(f"Could not find {query}")
@@ -195,7 +198,6 @@ class music_cog(commands.Cog):
         minutes, seconds = divmod(seconds, 60)    
         embed = discord.Embed(title = "Queue" if self.is_loop or self.is_loop_current else "Up next", description = retval)
         embed.set_footer(text = f'total play time: {int(minutes):02d}:{int(seconds):02d} loop is {"on" if self.is_loop or self.is_loop_current else "off"}')
-        print(retval)
         if retval != "":
             await ctx.send(embed = embed)
             await ctx.message.add_reaction("📜")
@@ -227,7 +229,6 @@ class music_cog(commands.Cog):
             self.vc = ""
             self.history = []
             self.music_queue = []
-            print(self.music_queue)
             self.is_loop_current = False
             self.is_loop = False
             self.current_song = {}
@@ -279,6 +280,7 @@ class music_cog(commands.Cog):
             for song in self.history:
                 spotify_id_history.append(song[0]['spotify_id'])
             #get the last 5 song's spotify id
+            #removes any None in the list because adding youtube music creates these Nones
             spotify_id_history = [i for i in spotify_id_history if i]
             last_five = spotify_id_history[-5:]
             if len(last_five) == 0:
@@ -406,7 +408,7 @@ class music_cog(commands.Cog):
             position = int(args)
             if position < 1:
                 await ctx.send("That's out of range!")
-            elif not self.is_loop or not self.is_loop_current:
+            elif not self.is_loop and not self.is_loop_current:
                 self.music_queue = self.music_queue[position - 1:]
                 await self.s(ctx)
             else:
@@ -428,11 +430,14 @@ class music_cog(commands.Cog):
             position = int(args)
             if position < 1:
                 await ctx.send("That's out of range!")
-            elif not self.is_loop or not self.is_loop_current:
+            elif not self.is_loop and not self.is_loop_current:
                 self.music_queue.pop(position - 1)
+                await ctx.message.add_reaction("🚮")
             else:
-                self.history.pop(position -1)
-                self.music_queue.pop(position - 1)
+                removed_track = self.history.pop(position -1)
+            if removed_track in self.music_queue:
+                self.music_queue.remove(removed_track)
+            await ctx.message.add_reaction("🚮")
         except ValueError:
             await ctx.send("R!remove <queue number> to remove the song")
         except IndexError:
