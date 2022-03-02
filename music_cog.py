@@ -3,7 +3,7 @@ from discord.ext import commands
 from Spotify import Spotify
 from random import randint, shuffle
 import asyncio
-
+from threading import Timer
 
 class music_cog(commands.Cog):
     def __init__(self, bot):
@@ -435,8 +435,8 @@ class music_cog(commands.Cog):
                 await ctx.message.add_reaction("🚮")
             else:
                 removed_track = self.history.pop(position -1)
-            if removed_track in self.music_queue:
-                self.music_queue.remove(removed_track)
+                if removed_track in self.music_queue:
+                    self.music_queue.remove(removed_track)
             await ctx.message.add_reaction("🚮")
         except ValueError:
             await ctx.send("R!remove <queue number> to remove the song")
