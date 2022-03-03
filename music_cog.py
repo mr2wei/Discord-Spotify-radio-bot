@@ -3,7 +3,29 @@ from discord.ext import commands
 from Spotify import Spotify
 from random import randint, shuffle
 import asyncio
-from threading import Timer
+import threading
+import time
+
+class setInterval:
+    #This class is for the bot to automatically disconnect itself from the voice channel
+    #https://stackoverflow.com/a/48709380
+    def __init__(self,interval,action, loop) :
+        self.interval=interval
+        self.action=action
+        self.loop = loop
+        self.stopEvent=threading.Event()
+        thread=threading.Thread(target=self.__setInterval)
+        thread.start()
+
+    def __setInterval(self) :
+        nextTime=time.time()+self.interval
+        while not self.stopEvent.wait(nextTime-time.time()) :
+            nextTime+=self.interval
+            coro = self.action()
+            fut = asyncio.run_coroutine_threadsafe(coro, self.loop)
+        
+    def cancel(self) :
+        self.stopEvent.set()
 
 class music_cog(commands.Cog):
     def __init__(self, bot):
@@ -22,8 +44,22 @@ class music_cog(commands.Cog):
         self.is_shuffle = False
         self.FFMPEG_OPTIONS = {'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5', 'options': '-vn'}
         
-        #current voice channel
+        #voice client
         self.vc = ""
+
+        inactivity = setInterval(1800, self.check_inactivity, self.bot.loop)
+
+    async def check_inactivity(self):
+        if self.vc != "":
+            if len(self.current_song[1].members) <= 1:
+                await self.vc.stop()
+                await self.vc.disconnect()
+                self.vc = ""
+                self.history = []
+                self.music_queue = []
+                self.is_loop_current = False
+                self.is_loop = False
+                self.current_song = {}
 
     async def search(self, query, spotify = True):
         #if we want to search spotify
@@ -109,7 +145,7 @@ class music_cog(commands.Cog):
             
             #try to connect to voice channel if you are not already connected
 
-            if self.vc == "" or not self.vc.is_connected() or self.vc == None or ctx.voice_client is None:
+            if self.vc == "" or not self.vc.is_connected() or ctx.voice_client is None:
                 self.vc = await self.music_queue[0][1].connect()
             elif self.vc == self.music_queue[0][1]:
                 pass
@@ -132,8 +168,8 @@ class music_cog(commands.Cog):
             embed.set_thumbnail(url = song['thumbnail'])
             await ctx.send(embed = embed)
 
-    @commands.command(aliases = ['play'], help="Plays a selected song from youtube")
-    async def p(self, ctx, *args, internal = False):
+    @commands.command(aliases = ['p'], help="Plays a selected song from youtube")
+    async def play(self, ctx, *args, internal = False):
         args = list(args)
         query = " ".join(args)
         if query == "" and len(self.music_queue) > 0:
@@ -145,6 +181,8 @@ class music_cog(commands.Cog):
         if voice_channel is None:
             #you need to be connected so that the bot knows where to go
             await ctx.send("Connect to a voice channel!")
+        elif len(self.music_queue) > 0 and voice_channel != self.music_queue[-1][1]:
+            await ctx.send("You are in a different voice channel!")
         else:
             if "open.spotify.com/playlist" in query:
                 playlist_id = query.split('/')[-1].split('?')[0]
@@ -180,9 +218,37 @@ class music_cog(commands.Cog):
                         await self.play_music(ctx)
                     elif not self.vc.is_playing():
                         await self.play_music(ctx)
+
+    @commands.command(aliases = ['pn', 'pnext'], help = "Adds the song to the front of the queue instead")
+    async def playnext(self, ctx, *args):
+        if ctx.author.voice.channel != self.current_song[1]:
+            await ctx.send("You're not in the voice channel!")
+            return
+        query = " ".join(args)
+        if "open.spotify.com/playlist" in query:
+            await ctx.send("Playlists are not supported with this command")
+        await self.p(ctx, query)
+        self.music_queue.insert(0, self.music_queue.pop(-1))
     
-    @commands.command(aliases = ['queue'], help="Displays the current songs in queue")
-    async def q(self, ctx):
+    @commands.command(aliases = ['dc', 'die', 'leave', 'stop'], help="Disconnecting bot from VC")
+    async def disconnect(self, ctx):
+        if ctx.author.voice.channel == self.current_song[1]:
+            await ctx.send(self.GOODBYE_QUOTES[randint(0,len(self.GOODBYE_QUOTES)-1)])
+            self.vc.stop()
+            #resets variables
+            await self.vc.disconnect()
+            self.vc = ""
+            self.history = []
+            self.music_queue = []
+            self.is_loop_current = False
+            self.is_loop = False
+            self.current_song = {}
+            await ctx.message.add_reaction("⏹")
+        else:
+            await ctx.send("Are you in the voice channel? 🧐")
+
+    @commands.command(aliases = ['q'], help="Displays the current songs in queue")
+    async def queue(self, ctx):
         retval = ""
         playtime = 0
         #if the user chose to loop, the bot will show the whole queue instead of up next
@@ -204,39 +270,18 @@ class music_cog(commands.Cog):
         else:
             await ctx.send("No music in queue")
   
-    @commands.command(aliases = ['skip'], help="Skips the current song being played")
-    async def s(self, ctx):
+    @commands.command(aliases = ['s'], help="Skips the current song being played")
+    async def skip(self, ctx):
         try:
             if ctx.author.voice.channel == self.current_song[1]:
-                server = ctx.message.guild
-                voice_channel = server.voice_client
-                voice_channel.stop()
+                self.vc.stop()
                 #try to play next in the queue if it exists
                 await ctx.message.add_reaction("⏩")
             else: 
                 await ctx.send("Are you in the voice channel? 🧐")
         except AttributeError:
             await ctx.send("Are you in the voice channel? 🧐")
-          
-    @commands.command(aliases = ['disconnect', 'die', 'leave', 'stop'], help="Disconnecting bot from VC")
-    async def dc(self, ctx):
-        if ctx.author.voice.channel == self.current_song[1]:
-            server = ctx.message.guild
-            voice_channel = server.voice_client
-            await ctx.send(self.goodbye_quotes[randint(0,len(self.goodbye_quotes)-1)])
-            voice_channel.stop()
-            #resets variables
-            self.vc = ""
-            self.history = []
-            self.music_queue = []
-            self.is_loop_current = False
-            self.is_loop = False
-            self.current_song = {}
-            await voice_channel.disconnect()
-            await ctx.message.add_reaction("⏹")
-        else:
-            await ctx.send("Are you in the voice channel? 🧐")
-    
+           
     @commands.command(name="pause", help="Pausing the song")
     async def pause(self, ctx):
         try:
@@ -271,50 +316,9 @@ class music_cog(commands.Cog):
                 await ctx.send("Are you in the voice channel? 🧐")
         except AttributeError:
             await ctx.send("Are you in the voice channel? 🧐")
-    
-    @commands.command(name = 'radio', help = "Uses spotify's recommendation API to auto add similar songs based on current songs")
-    async def radio(self, ctx):
-        if len(self.history) > 0 and ctx.author.voice.channel == self.current_song[1]:
-            spotify_id_history = []
-            #copy the spotify ids of the songs in self.history
-            for song in self.history:
-                spotify_id_history.append(song[0]['spotify_id'])
-            #get the last 5 song's spotify id
-            #removes any None in the list because adding youtube music creates these Nones
-            spotify_id_history = [i for i in spotify_id_history if i]
-            last_five = spotify_id_history[-5:]
-            if len(last_five) == 0:
-                await ctx.send("No spotify songs added, cannot create recommendations")
-                return
-            if len(self.history) < 3:
-                await ctx.send("For better recommendations, try adding 5 songs")
-            recommendations = await self.spotify.get_recommendations(last_five) #this is an object (well that's what i'd describe it as) it returns a list? dictionary? of recommended tracks from spotify
-            track_names = []
-            for track in recommendations.tracks:
-                track_names.append(track.name)
-            await ctx.send("Turning on the radio 📻🎵")
-            for trackname in track_names:
-                #calls self.p to add these songs to queue
-                await self.p(ctx, trackname, internal = True)
-        else:
-            await ctx.send("Add some songs to start the radio! (it is recommended to add atleast 3 songs)")
 
-    @commands.command(name = 'lyrics', help = "Get lyrics for the current song")
-    async def lyrics(self, ctx):
-        if bool(self.current_song):
-            lyrics = self.spotify.get_lyrics(self.current_song[0])
-            if lyrics is None:
-                await ctx.send("Could not find lyrics for the current song")
-            else:
-                embed = discord.Embed(title = f"Lyrics: {self.current_song[0]['title']}", description = lyrics)
-                embed.set_footer(text = "lyrics by genius.com")
-                await ctx.send(embed = embed)
-                await ctx.message.add_reaction("🎤")
-        else:
-            await ctx.send("There is no song playing at the moment")
-
-    @commands.command(aliases = ['loop'], help = 'Loop the songs you have fed the bot')
-    async def l(self, ctx):
+    @commands.command(aliases = ['l'], help = 'Loop the songs you have fed the bot')
+    async def loop(self, ctx):
         if len(self.history) > 0 and ctx.author.voice.channel == self.current_song[1]:
             if not self.is_loop:
                 self.is_loop = True
@@ -327,8 +331,8 @@ class music_cog(commands.Cog):
         else:
             await ctx.send("You haven't added any songs to queue")
 
-    @commands.command(aliases = ['loopcurrent'], help = 'Loop current song')
-    async def lc(self, ctx):
+    @commands.command(aliases = ['lc'], help = 'Loop current song')
+    async def loopcurrent(self, ctx):
         if bool(self.current_song) and ctx.author.voice.channel == self.current_song[1]:
             if not self.is_loop_current:
                 self.is_loop_current = True
@@ -355,19 +359,8 @@ class music_cog(commands.Cog):
         else:
             await ctx.send("Theres no songs in the queue! Or you're not in the voice channel **:**|")
 
-    @commands.command(aliases = ['pn', 'pnext'], help = "Adds the song to the front of the queue instead")
-    async def playnext(self, ctx, *args):
-        if ctx.author.voice.channel != self.current_song[1]:
-            await ctx.send("You're not in the voice channel!")
-            return
-        query = " ".join(args)
-        if "open.spotify.com/playlist" in query:
-            await ctx.send("Playlists are not supported with this command")
-        await self.p(ctx, query)
-        self.music_queue.insert(0, self.music_queue.pop(-1))
-
-    @commands.command(aliases = ['move'], help = "Move songs within the queue")
-    async def m(self, ctx, *args):
+    @commands.command(aliases = ['m'], help = "Move songs within the queue")
+    async def move(self, ctx, *args):
         if ctx.author.voice.channel != self.current_song[1]:
             await ctx.send("You're not in the voice channel!")
             return 
@@ -429,7 +422,7 @@ class music_cog(commands.Cog):
         try:
             position = int(args)
             if position < 1:
-                await ctx.send("That's out of range!")
+                raise IndexError
             elif not self.is_loop and not self.is_loop_current:
                 self.music_queue.pop(position - 1)
                 await ctx.message.add_reaction("🚮")
@@ -442,3 +435,73 @@ class music_cog(commands.Cog):
             await ctx.send("R!remove <queue number> to remove the song")
         except IndexError:
             await ctx.send("That's out of range!")
+
+    @commands.command(aliases = ['clr'], help = "Clears the queue")
+    async def clear(self, ctx, *args):
+        args = ''.join(args)
+        if args == "":
+            self.music_queue = []
+            self.history = []
+            await ctx.message.add_reaction("🚮")
+        else:
+            try:
+                position = int(args)
+                if position < 1:
+                    raise IndexError
+                elif not self.is_loop and not self.is_loop_current:
+                    self.music_queue = self.music_queue[:position - 1]
+                    await ctx.message.add_reaction("🚮")
+                else:
+                    if self.history[position -1] in self.music_queue:
+                        queue_position = self.music_queue.index(self.history[position-1])
+                        self.history =self.history[:position - 1]
+                        self.music_queue = self.music_queue[:queue_position]
+                    else:
+                        self.history = self.history[:position - 1]
+                        self.music_queue = []
+                    await ctx.message.add_reaction("🚮")
+            except ValueError:
+                ctx.send("Type R!clear <position to clear from> or R!clear to clear the entire queue")
+            except IndexError:
+                ctx.send("That's out of range!")
+    
+    @commands.command(name = 'radio', help = "Uses spotify's recommendation API to auto add similar songs based on current songs")
+    async def radio(self, ctx):
+        if len(self.history) > 0 and ctx.author.voice.channel == self.current_song[1]:
+            spotify_id_history = []
+            #copy the spotify ids of the songs in self.history
+            for song in self.history:
+                spotify_id_history.append(song[0]['spotify_id'])
+            #get the last 5 song's spotify id
+            #removes any None in the list because adding youtube music creates these Nones
+            spotify_id_history = [i for i in spotify_id_history if i]
+            last_five = spotify_id_history[-5:]
+            if len(last_five) == 0:
+                await ctx.send("No spotify songs added, cannot create recommendations")
+                return
+            if len(self.history) < 3:
+                await ctx.send("For better recommendations, try adding 5 songs")
+            recommendations = await self.spotify.get_recommendations(last_five) #this is an object (well that's what i'd describe it as) it returns a list? dictionary? of recommended tracks from spotify
+            track_names = []
+            for track in recommendations.tracks:
+                track_names.append(track.name)
+            await ctx.send("Turning on the radio 📻🎵")
+            for trackname in track_names:
+                #calls self.p to add these songs to queue
+                await self.p(ctx, trackname, internal = True)
+        else:
+            await ctx.send("Add some songs to start the radio! (it is recommended to add atleast 3 songs)")
+
+    @commands.command(name = 'lyrics', help = "Get lyrics for the current song")
+    async def lyrics(self, ctx):
+        if bool(self.current_song):
+            lyrics = self.spotify.get_lyrics(self.current_song[0])
+            if lyrics is None:
+                await ctx.send("Could not find lyrics for the current song")
+            else:
+                embed = discord.Embed(title = f"Lyrics: {self.current_song[0]['title']}", description = lyrics)
+                embed.set_footer(text = "lyrics by genius.com")
+                await ctx.send(embed = embed)
+                await ctx.message.add_reaction("🎤")
+        else:
+            await ctx.send("There is no song playing at the moment")
