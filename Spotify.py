@@ -13,12 +13,18 @@ class Spotify:
 
     
     #returns the first result
-    async def search(self, query):
-        tracks, = await self.spotify.search(query, limit=1)
-        try: 
-            return tracks.items[0]
-        except IndexError:
-            return False
+    async def search(self, query, id = False):
+        if not id:
+            tracks, = await self.spotify.search(query, limit=1)
+            try: 
+                return tracks.items[0]
+            except IndexError:
+                return False
+        else:
+            try:
+                return await self.spotify.track(query)
+            except tk.BadRequest:
+                return False
 
     def search_youtube(self, query, link = False): #i copied to guide for this
         with YoutubeDL(self.YDL_OPTIONS) as ydl:

@@ -5,15 +5,21 @@ class main_cog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.help_message = discord.Embed(title = "Available commands 🎉", description = """
-`R!play <song name>` to add a song to queue
-`R!radio` to use Spotify's algorithms to suggest and add music to queue
+`R!play <song name> or <spotify song link> or <youtube link>` to add a song to queue
+**Youtube songs cannot be used for the Radio feature**
+`R!radio` to use Spotify's algorithms to automagically add similar songs to the queue
 `R!pause` `R!resume` to pause and resume
-`R!skip` to skip the curent song (it is a little finnicky)
+`R!skip` to skip the curent song
+`R!jump <index of song to jump to>` to skip to the desired song
 `R!loop` loops the whole queue including songs that have already played
 `R!loopcurrent` loops the current song
 `R!shuffle` shuffles the whole queue
 `R!queue` displays upcoming music or the whole queue if loop is on
+`R!move <index of song to move> <index of destination>` moves the song in the queue
+`R!remove <queue number> to remove the song
+`R!clear` clears the queue
 `R!lyrics` to get lyrics for the current song
+`R!dc` 
 """)
     
     @commands.Cog.listener()
@@ -28,9 +34,8 @@ class main_cog(commands.Cog):
     async def issues(self, ctx):
         await ctx.send("""
 ```
-R!radio is really scary because idk how stable it will be if you type a command while it's still adding songs
-R!radio seems fine for now though
 R!lyrics have formatting issues cause by <a> tags which is so annoying
 play_music() sometimes doesn't play certain songs... i think this is an FFMPEG issue
+the player will occasionally speed up or slow down songs at certain parts. (out of my control)
 ```        
 """)

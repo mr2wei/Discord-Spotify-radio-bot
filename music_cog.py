@@ -5,27 +5,8 @@ from random import randint, shuffle
 import asyncio
 import threading
 import time
-
-class setInterval:
-    #This class is for the bot to automatically disconnect itself from the voice channel
-    #https://stackoverflow.com/a/48709380
-    def __init__(self,interval,action, loop) :
-        self.interval=interval
-        self.action=action
-        self.loop = loop
-        self.stopEvent=threading.Event()
-        thread=threading.Thread(target=self.__setInterval)
-        thread.start()
-
-    def __setInterval(self) :
-        nextTime=time.time()+self.interval
-        while not self.stopEvent.wait(nextTime-time.time()) :
-            nextTime+=self.interval
-            coro = self.action()
-            fut = asyncio.run_coroutine_threadsafe(coro, self.loop)
-        
-    def cancel(self) :
-        self.stopEvent.set()
+from urllib.request import urlopen
+from colorthief import ColorThief
 
 class music_cog(commands.Cog):
     def __init__(self, bot):
@@ -43,28 +24,23 @@ class music_cog(commands.Cog):
         self.is_loop_current = False
         self.is_shuffle = False
         self.FFMPEG_OPTIONS = {'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5', 'options': '-vn'}
-        
+
         #voice client
         self.vc = ""
 
-        inactivity = setInterval(1800, self.check_inactivity, self.bot.loop)
 
-    async def check_inactivity(self):
-        if self.vc != "":
-            if len(self.current_song[1].members) <= 1:
-                await self.vc.stop()
-                await self.vc.disconnect()
-                self.vc = ""
-                self.history = []
-                self.music_queue = []
-                self.is_loop_current = False
-                self.is_loop = False
-                self.current_song = {}
+    async def check_inactivity(self, ctx):
+        await asyncio.sleep(300)
+        if len(self.music_queue) == 0 and not self.vc.is_playing():
+            await self.disconnect(ctx)
 
-    async def search(self, query, spotify = True):
+    async def search(self, query, spotify = True, id = False):
         #if we want to search spotify
         if spotify:
-            track = await self.spotify.search(query)
+            if not id:
+                track = await self.spotify.search(query)
+            else:
+                track = await self.spotify.search(query.split('/')[-1].split('?')[0], True)
             if not track:
                 return False
             #i chose to search song title and artist name to eliminate possibility of the bot playing a random youtube video
@@ -72,10 +48,13 @@ class music_cog(commands.Cog):
             #for displaying the duration
             seconds, milliseconds = divmod(track.duration_ms, 1000)
             minutes, seconds = divmod(seconds, 60)
+            image_color = ColorThief(urlopen(track.album.images[2].url)).get_color(quality=1)
+
             song = {
                 'source': youtube_link, 
                 'title': f"{track.name} by {track.artists[0].name}", 
                 'thumbnail': track.album.images[0].url, 
+                'color': discord.Color.from_rgb(image_color[0],image_color[1], image_color[2]),
                 'duration': f'{int(minutes):02d}:{int(seconds):02d}', 
                 'duration_ms': track.duration_ms, 
                 'trackname': track.name, 
@@ -90,6 +69,7 @@ class music_cog(commands.Cog):
                 'source': track['formats'][0]['url'], 
                 'title': track['title'], 
                 'thumbnail': r"https://upload.wikimedia.org/wikipedia/commons/thumb/7/72/YouTube_social_white_square_%282017%29.svg/2048px-YouTube_social_white_square_%282017%29.svg.png", 
+                'color': discord.Color.from_rgb(255,60,30),
                 'duration': "N/A", 
                 'duration_ms': 0, 
                 'trackname': track['title'], 
@@ -100,34 +80,43 @@ class music_cog(commands.Cog):
 
     async def add_from_playlist(self, ctx, playlist, voice_channel):
         await self.bot.wait_until_ready()
-        embed = discord.Embed(title = f"Adding from playlist: {playlist.name}", description = "playlist.owner.display_name\n[----------]")
+        playlist_color = ColorThief(urlopen(playlist.images[0].url)).get_color(quality=1)
+        embed = discord.Embed(title = f"Adding from playlist: {playlist.name}", description = "playlist.owner.display_name\n[----------]", color = discord.Color.from_rgb(playlist_color[0], playlist_color[1], playlist_color[2]))
         embed.set_thumbnail(url = playlist.images[0].url)
         embed.set_footer(text = "Requested by " + ctx.author.display_name)
         message = await ctx.send(embed = embed)
-        await ctx.send("If music doesn't start after 5 seconds type R!play to force it to play")
         for index, track in enumerate(playlist.tracks.items):
-            youtube_link = self.spotify.search_youtube(f"{track.track.name} {track.track.artists[0].name}")['formats'][0]['url']
-            seconds, milliseconds = divmod(track.track.duration_ms, 1000)
-            minutes, seconds = divmod(seconds, 60)
-            song = {
-                'source': youtube_link, 
-                'title': f"{track.track.name} by {track.track.artists[0].name}", 
-                'thumbnail': track.track.album.images[0].url, 
-                'duration': f'{int(minutes):02d}:{int(seconds):02d}', 
-                'duration_ms': track.track.duration_ms, 
-                'trackname':track.track.name, 
-                'artist': track.track.artists[0].name, 
-                'spotify_id': track.track.uri.split(':')[-1]
-            }
-                   
-            self.music_queue.append([song, voice_channel])
-            self.history.append([song, voice_channel])
-            progress = int((index + 1)/(len(playlist.tracks.items)/100))
-            embed = discord.Embed(title = f"Adding from playlist: {playlist.name}", description = f"{playlist.owner.display_name}\n[{'#' * int(progress/10)}{'-'* (10 - int(progress/10))}] {progress}%")
-            embed.set_thumbnail(url = playlist.images[0].url)
-            embed.set_footer(text = "Requested by " + ctx.author.display_name)
+            try:
+                youtube_link = self.spotify.search_youtube(f"{track.track.name} {track.track.artists[0].name}")['formats'][0]['url']
+                seconds, milliseconds = divmod(track.track.duration_ms, 1000)
+                minutes, seconds = divmod(seconds, 60)
+                image_color = ColorThief(urlopen(track.track.album.images[2].url)).get_color(quality=1)
+                song = {
+                    'source': youtube_link, 
+                    'title': f"{track.track.name} by {track.track.artists[0].name}", 
+                    'thumbnail': track.track.album.images[0].url,
+                    'color': discord.Color.from_rgb(image_color[0],image_color[1], image_color[2]),
+                    'duration': f'{int(minutes):02d}:{int(seconds):02d}', 
+                    'duration_ms': track.track.duration_ms, 
+                    'trackname':track.track.name, 
+                    'artist': track.track.artists[0].name, 
+                    'spotify_id': track.track.uri.split(':')[-1]
+                }
+                    
+                self.music_queue.append([song, voice_channel])
+                self.history.append([song, voice_channel])
+                progress = int((index + 1)/(len(playlist.tracks.items)/100))
+                embed = discord.Embed(title = f"Adding from playlist: {playlist.name}", description = f"{playlist.owner.display_name}\n[{'#' * int(progress/10)}{'-'* (10 - int(progress/10))}] {progress}%", color = discord.Color.from_rgb(playlist_color[0], playlist_color[1], playlist_color[2]))
+                embed.set_thumbnail(url = playlist.images[0].url)
+                embed.set_footer(text = "Requested by " + ctx.author.display_name)
+                #keeps editing the message to update the progress bar  
             #keeps editing the message to update the progress bar  
-            await message.edit(embed = embed)
+                #keeps editing the message to update the progress bar  
+                await message.edit(embed = embed)
+            except TypeError:
+                await ctx.send(f"Couldn't find {track.track.name}")
+                continue
+            
 
     def play_next(self, ctx): #https://discordpy.readthedocs.io/en/latest/faq.html#how-do-i-pass-a-coroutine-to-the-player-s-after-function
         coro = self.play_music(ctx)
@@ -147,10 +136,7 @@ class music_cog(commands.Cog):
 
             if self.vc == "" or not self.vc.is_connected() or ctx.voice_client is None:
                 self.vc = await self.music_queue[0][1].connect()
-            elif self.vc == self.music_queue[0][1]:
-                pass
-            else:
-                await self.vc.move_to(self.music_queue[0][1])
+            
             source = discord.FFmpegOpusAudio(m_url, **self.FFMPEG_OPTIONS)
             #remove the first element as you are currently playing it and assign it to current song
             self.current_song = self.music_queue.pop(0)
@@ -164,9 +150,11 @@ class music_cog(commands.Cog):
                     shuffle(self.music_queue)
             self.vc.play(source, after= lambda e: self.play_next(ctx))
             #Now playing embed
-            embed = discord.Embed(title = f"Now playing: {song['title']}", description = f"duration: {song['duration']}")
+            embed = discord.Embed(title = f"Now playing: {song['title']}", description = f"duration: {song['duration']}", color = song['color'])
             embed.set_thumbnail(url = song['thumbnail'])
             await ctx.send(embed = embed)
+        else:
+            await self.check_inactivity(ctx)
 
     @commands.command(aliases = ['p'], help="Plays a selected song from youtube")
     async def play(self, ctx, *args, internal = False):
@@ -199,15 +187,16 @@ class music_cog(commands.Cog):
             else:
                 if "youtube.com/watch" in query or "youtu.be/" in query:
                     song = await self.search(query, False)
+                elif "spotify.com/track" in query:
+                    song = await self.search(query, id= True)
                 else:
-                    #sanitizing the input
                     song = await self.search(query)
                 if song == False:
                     await ctx.send(f"Could not find {query}")
                 else:
                     if not internal:
                         #create the embed message (add to queue message)
-                        embed = discord.Embed(title = f"Added to queue: {song['title']}", description = f"duration: {song['duration']}")
+                        embed = discord.Embed(title = f"Added to queue: {song['title']}", description = f"duration: {song['duration']}", color = song['color'])
                         embed.set_thumbnail(url = song['thumbnail'])
                         embed.set_footer(text= "Requested by " + ctx.author.display_name)
                         await ctx.send(embed = embed)
@@ -227,7 +216,7 @@ class music_cog(commands.Cog):
         query = " ".join(args)
         if "open.spotify.com/playlist" in query:
             await ctx.send("Playlists are not supported with this command")
-        await self.p(ctx, query)
+        await self.play(ctx, query)
         self.music_queue.insert(0, self.music_queue.pop(-1))
     
     @commands.command(aliases = ['dc', 'die', 'leave', 'stop'], help="Disconnecting bot from VC")
@@ -365,7 +354,7 @@ class music_cog(commands.Cog):
             await ctx.send("You're not in the voice channel!")
             return 
         args = list(args)
-        if type(args) != tuple or len(args) == 0 or args[0] == "help":
+        if len(args) == 0 or args[0] == "help":
             await ctx.send("To use R!move, type R!move <index of song you want to move> <index to move to>")
         try: 
             args[0], args[1] = int(args[0]), int(args[1])
@@ -403,10 +392,10 @@ class music_cog(commands.Cog):
                 await ctx.send("That's out of range!")
             elif not self.is_loop and not self.is_loop_current:
                 self.music_queue = self.music_queue[position - 1:]
-                await self.s(ctx)
+                await self.skip(ctx)
             else:
                 self.music_queue = self.history[position -1 :]
-                await self.s(ctx)
+                await self.skip(ctx)
         except ValueError:
             await ctx.send("R!jump <queue number> to jump to that song")
         except IndexError:
@@ -479,8 +468,6 @@ class music_cog(commands.Cog):
             if len(last_five) == 0:
                 await ctx.send("No spotify songs added, cannot create recommendations")
                 return
-            if len(self.history) < 3:
-                await ctx.send("For better recommendations, try adding 5 songs")
             recommendations = await self.spotify.get_recommendations(last_five) #this is an object (well that's what i'd describe it as) it returns a list? dictionary? of recommended tracks from spotify
             track_names = []
             for track in recommendations.tracks:
@@ -488,7 +475,7 @@ class music_cog(commands.Cog):
             await ctx.send("Turning on the radio 📻🎵")
             for trackname in track_names:
                 #calls self.p to add these songs to queue
-                await self.p(ctx, trackname, internal = True)
+                await self.play(ctx, trackname, internal = True)
         else:
             await ctx.send("Add some songs to start the radio! (it is recommended to add atleast 3 songs)")
 
