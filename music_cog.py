@@ -3,8 +3,6 @@ from discord.ext import commands
 from Spotify import Spotify
 from random import randint, shuffle
 import asyncio
-import threading
-import time
 from urllib.request import urlopen
 from colorthief import ColorThief
 
@@ -83,7 +81,7 @@ class music_cog(commands.Cog):
         playlist_color = ColorThief(urlopen(playlist.images[0].url)).get_color(quality=1)
         embed = discord.Embed(title = f"Adding from playlist: {playlist.name}", description = "playlist.owner.display_name\n[----------]", color = discord.Color.from_rgb(playlist_color[0], playlist_color[1], playlist_color[2]))
         embed.set_thumbnail(url = playlist.images[0].url)
-        embed.set_footer(text = "Requested by " + ctx.author.display_name)
+        embed.set_footer(text = "Requested by " + ctx.author.display_name + " | music not playing? type R!p")
         message = await ctx.send(embed = embed)
         for index, track in enumerate(playlist.tracks.items):
             try:
@@ -108,9 +106,7 @@ class music_cog(commands.Cog):
                 progress = int((index + 1)/(len(playlist.tracks.items)/100))
                 embed = discord.Embed(title = f"Adding from playlist: {playlist.name}", description = f"{playlist.owner.display_name}\n[{'#' * int(progress/10)}{'-'* (10 - int(progress/10))}] {progress}%", color = discord.Color.from_rgb(playlist_color[0], playlist_color[1], playlist_color[2]))
                 embed.set_thumbnail(url = playlist.images[0].url)
-                embed.set_footer(text = "Requested by " + ctx.author.display_name)
-                #keeps editing the message to update the progress bar  
-            #keeps editing the message to update the progress bar  
+                embed.set_footer(text = "Requested by " + ctx.author.display_name + " | music not playing? type R!p")
                 #keeps editing the message to update the progress bar  
                 await message.edit(embed = embed)
             except TypeError:
@@ -165,11 +161,14 @@ class music_cog(commands.Cog):
         elif query == "":
             await ctx.send("Enter the song name after R!play to add the song to queue")
         
-        voice_channel = ctx.author.voice.channel
-        if voice_channel is None:
+        try:
+            voice_channel = ctx.author.voice.channel
             #you need to be connected so that the bot knows where to go
+        except AttributeError:
             await ctx.send("Connect to a voice channel!")
-        elif len(self.music_queue) > 0 and voice_channel != self.music_queue[-1][1]:
+            return
+
+        if len(self.music_queue) > 0 and voice_channel != self.music_queue[-1][1]:
             await ctx.send("You are in a different voice channel!")
         else:
             if "open.spotify.com/playlist" in query:

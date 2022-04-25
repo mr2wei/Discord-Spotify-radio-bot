@@ -16,10 +16,10 @@ class main_cog(commands.Cog):
 `R!shuffle` shuffles the whole queue
 `R!queue` displays upcoming music or the whole queue if loop is on
 `R!move <index of song to move> <index of destination>` moves the song in the queue
-`R!remove <queue number> to remove the song
+`R!remove <queue number> to remove the song`
 `R!clear` clears the queue
 `R!lyrics` to get lyrics for the current song
-`R!dc` 
+`R!dc` disconnects
 """)
     
     @commands.Cog.listener()

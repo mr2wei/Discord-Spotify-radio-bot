@@ -10,7 +10,7 @@ from music_cog import music_cog
 load_dotenv()
 
 
-bot = commands.Bot(command_prefix='R!', description='Music bot manager with better features')
+bot = commands.Bot(command_prefix=['R!', 'r!'], description='Music bot manager with better features')
 
 bot.remove_command('help')
 

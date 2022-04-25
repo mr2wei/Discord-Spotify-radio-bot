@@ -3,6 +3,9 @@ from bs4 import BeautifulSoup
 import tekore as tk
 from youtube_dl import YoutubeDL
 import re
+import os
+from lyrics_extractor import SongLyrics
+from lyrics_extractor import LyricScraperException
 
 class Spotify:
     def __init__(self):
@@ -10,7 +13,7 @@ class Spotify:
         self.token_spotify = tk.request_client_token(*self.conf[:2])
         self.spotify = tk.Spotify(self.token_spotify, asynchronous=True)
         self.YDL_OPTIONS = {'format': 'bestaudio', 'noplaylist':'True'}
-
+        self.lyric_finder = SongLyrics(os.getenv('GOOGLE_CUSTOM_SEARCH_API'), os.getenv('GOOGLE_ENGINE_ID'))
     
     #returns the first result
     async def search(self, query, id = False):
@@ -43,31 +46,14 @@ class Spotify:
         return recommendations
     
     def get_lyrics(self, track): #returns None if no lyrics
-        track_name = track['trackname'].split(' ')
-        artist_name = track['artist'].split(' ')
-        #filters the words to ensure there are no specil characters
-        for word in track_name:
-            track_name[track_name.index(word)] = re.sub('[^A-Za-z0-9]+', '', word)
-        for word in artist_name:
-            artist_name[artist_name.index(word)] = re.sub('[^A-Za-z0-9]+', '', word)
-        #joins them back with '-' for the url ex: 'The-weeknd'
-        track_name = '-'.join(track_name)
-        artist_name = '-'.join(artist_name)
-        print(track_name)
-
-        print(artist_name)
-        #ex: https://genius.com/The-weeknd-less-than-zero
-        page = requests.get(f'https://genius.com/{artist_name}-{track_name}-lyrics')
-        html = BeautifulSoup(page.text, 'html.parser')
-        #this could cause problems in the future but my bot scrapes the genius website. I should find alternatives :|
-        lyrics = html.find_all("div", {'data-lyrics-container' : "true"})
-        full_lyrics = []
-        if lyrics:
-            for lyric_parts in lyrics:
-                full_lyrics.append(lyric_parts.get_text(separator= '\n'))
-            return '\n'.join(full_lyrics)
-        else:
+        track_name = track['trackname']
+        artist_name = track['artist']
+        try:
+            return self.lyric_finder.get_lyrics(f'{track_name} {artist_name}')['lyrics']
+        except LyricScraperException:
             return None
+
+
     
     async def get_playlist(self, playlist_id):
         return await self.spotify.playlist(playlist_id)
