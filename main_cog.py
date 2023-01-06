@@ -3,6 +3,7 @@ from discord.ext import commands
 
 class main_cog(commands.Cog):
     def __init__(self, bot):
+        print("loaded main_cog")
         self.bot = bot
         self.help_message = discord.Embed(title = "Available commands 🎉", description = """
 `R!play <song name> or <spotify song link> or <youtube link>` to add a song to queue
@@ -21,10 +22,6 @@ class main_cog(commands.Cog):
 `R!lyrics` to get lyrics for the current song
 `R!dc` disconnects
 """)
-    
-    @commands.Cog.listener()
-    async def on_ready(self):
-        print('Connected')
     
     @commands.command(name="help", help="Displays all the available commands")
     async def help(self, ctx):

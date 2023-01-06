@@ -7,13 +7,14 @@ import os
 from lyrics_extractor import SongLyrics
 from lyrics_extractor import LyricScraperException
 
-class Spotify:
+class music_search:
     def __init__(self):
         self.conf = tk.config_from_environment()
         self.token_spotify = tk.request_client_token(*self.conf[:2])
         self.spotify = tk.Spotify(self.token_spotify, asynchronous=True)
         self.YDL_OPTIONS = {'format': 'bestaudio', 'noplaylist':'True'}
         self.lyric_finder = SongLyrics(os.getenv('GOOGLE_CUSTOM_SEARCH_API'), os.getenv('GOOGLE_ENGINE_ID'))
+        self.ydl = YoutubeDL(self.YDL_OPTIONS)
     
     #returns the first result
     async def search(self, query, id = False):
@@ -30,14 +31,14 @@ class Spotify:
                 return False
 
     def search_youtube(self, query, link = False): #i copied to guide for this
-        with YoutubeDL(self.YDL_OPTIONS) as ydl:
-            try: 
-                if link:
-                    info = ydl.extract_info(query, download = False)
-                else:
-                    info = ydl.extract_info("ytsearch:%s" % query, download=False)['entries'][0]
-            except Exception: 
-                return False
+        
+        try: 
+            if link:
+                info = self.ydl.extract_info(query, download = False)
+            else:
+                info = self.ydl.extract_info("ytsearch:%s" % query, download=False)['entries'][0]
+        except Exception: 
+            return False
 
         return info
     
@@ -52,19 +53,9 @@ class Spotify:
             return self.lyric_finder.get_lyrics(f'{track_name} {artist_name}')['lyrics']
         except LyricScraperException:
             return None
-
-
     
     async def get_playlist(self, playlist_id):
         return await self.spotify.playlist(playlist_id)
 
         
         
-
-
-if __name__ == "__main__":
-    #this is just for me to test the functions
-    import asyncio
-    spotify = Spotify()
-    print(spotify.search_youtube("https://www.youtube.com/watch?v=_nQMRuVwzhY", True))
-    

@@ -1,15 +1,19 @@
-# Discord-Spotify-radio-bot
-A Discord music bot built on python that utilises Spotify's get recommendation API
+# The better discord music bot
+A Discord music bot that utilises spotify's API to create recommendations based on music played.
+
+This bot also has sponsorblock integration to skip non music segments when the source is from music videos.
 
 # How to use it?
-I'm not really sure the proper ways of doing it...
-
-Anyway, these are the additional python packages i used:
+These are the additional python packages i used:
 
 - tekore
 - discord.py
 - youtube-dl
-- beautifulsoup
+- beautifulsoup4
+- lyrics-extractor
+- dotenv
+- colorthief
+- sponsorblock.py
 
 
 I stored my discord and spotify keys in a .env file like this:
@@ -18,9 +22,17 @@ I stored my discord and spotify keys in a .env file like this:
 DISCORD_TOKEN = <your discord bot token>
 SPOTIFY_CLIENT_ID = <your spotify application client id>
 SPOTIFY_CLIENT_SECRET = <your spotify application client secret>
+GOOGLE_ENGINE_ID = <google custom search engine id>
+GOOGLE_CUSTOM_SEARCH_API = <google custom search api key>
 ```
 
-bot.py is the main program so hopefully just running that would work
+For the google keys, follow this link https://pypi.org/project/lyrics-extractor/
+the instructions can be found in the requirements segment of the linked page
+
+To start the bot, run this command where the bot is located (just run it like any python program)
+```
+python3 bot.py
+```
 
 # What can the bot do?
 The bot uses the prefix R!
@@ -40,9 +52,10 @@ you can:
 # What can't the bot do?
 Alot of things...
 
-It can't play in more than one vc or server
+- It can't play in more than one vc or server
+- Cannot skip non music segments that are in between the music segments
 
 # Issues
-- R!lyrics have formatting issues cause by <a> tags which is so annoying
-- play_music() sometimes doesn't play certain songs... i think this is an FFMPEG issue
+- audio output can be inconsistent with random speeding up and slowing down. I cannot find a solution for this.
+
 
