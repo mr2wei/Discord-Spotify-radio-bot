@@ -22,10 +22,12 @@ class music_cog(commands.Cog):
         #according to a guide https://www.youtube.com/watch?v=i0nNPidYQ2w&t=6s 2d array with song and channel
         self.history = [] 
         self.music_queue = []
+        self.autoplay_queue = []
         self.current_song = {}
         self.is_loop = False
         self.is_loop_current = False
         self.is_shuffle = False
+        self.autoplay = False
         self.FFMPEG_OPTIONS = {'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5', 'options': '-vn'} #to seek add options = '-vn -ss 00:00:30 -t 00:01:00'
 
         #voice client
@@ -149,7 +151,7 @@ class music_cog(commands.Cog):
             #find any non music segments from the song
             youtube_url = f"https://www.youtube.com/watch?v={song['youtube_id']}"
 
-            start_time = ""
+            start_time = "0"
             start_time_seconds = 0
             music_duration = ""
             try:
@@ -160,22 +162,16 @@ class music_cog(commands.Cog):
                             #since segment is at the start of the video, it will just skip to the end of the segment
                             #segment.end is in seconds, ffmpeg options time stamp is in the format of hh:mm:ss
                             #segment.end is a float, so it will be rounded to the nearest second
-                            start_time = str(timedelta(seconds = round(segment.end)))
+                            start_time = str(round(segment.end))
                             start_time_seconds = round(segment.end)
                         elif segment.category == "music_offtopic" and isclose(segment.end, song['youtube_duration'], abs_tol=2):
                             #since segment is at the end of the video, it should stop at segment.start
                             #segment.start is in seconds, ffmpeg options time stamp is in the format of hh:mm:ss
                             #we want to get the duration between the start of this segment and the start_time (start of the actual music)
-                            music_duration = str(timedelta(seconds = round(segment.start) - start_time_seconds))
-
-                if start_time != ""  and music_duration == "":
-                    #if there is no music_offtopic segment at the end, the duration will be from start_time to the end of the video
-                    music_duration = str(timedelta(seconds = song['youtube_duration'] - start_time_seconds))
-                    song_ffmpeg_options['options'] = f"-vn -ss {start_time} -t {music_duration}"
-                elif start_time == "" and music_duration != "":
-                    #if there is no music_offtopic segment at the start, the duration will be from the start of the video to the end of the music
-                    song_ffmpeg_options['options'] = f"-vn -ss 0:00:00 -t {music_duration}"
-                    song_ffmpeg_options['options'] = f"-vn -ss {start_time} -t {music_duration}"
+                            music_duration = "-t " + str(round(segment.start) - start_time_seconds)
+                print(youtube_url)
+                print(f"{start_time} {music_duration}")
+                song_ffmpeg_options['options'] = f"-vn -ss {start_time} {music_duration}"
             except sb.NotFoundException:
                 #if there are no sponsorblock segments/data for the video
                 pass
@@ -201,13 +197,40 @@ class music_cog(commands.Cog):
             embed = discord.Embed(title = f"Now playing: {song['title']}", description = f"duration: {song['duration']}", color = song['color'])
             embed.set_thumbnail(url = song['thumbnail'])
             await ctx.send(embed = embed)
+
+            # if there is no more songs in the queue and autoplay is on, add the first song from autoplay queue to the queue
+            # if there is less than 10 songs in the autoplay queue, update the autoplay queue
+            if len(self.music_queue) == 0 and self.autoplay:
+                if len(self.autoplay_queue) < 11:
+                    await self.update_autoplay_queue()
+                
+                await self.play(ctx, ' by'.join(self.autoplay_queue.pop(0).split(' by')[:-1]), internal = True)
+
         else:
             await self.check_inactivity(ctx)
-            
-    async def add_radio_tracks(self, ctx, track_names):
-        for trackname in track_names:
-            #calls self.p to add these songs to queue
-            await self.play(ctx, trackname, internal = True)
+
+    # returns:
+    # False if there are no spotify songs in music history
+    # True if successful
+    async def update_autoplay_queue(self):
+        spotify_id_history = []
+
+        #copy the spotify ids of the songs in self.history
+        for song in self.history:
+            spotify_id_history.append(song[0]['spotify_id'])
+
+        #get the last 5 song's spotify id
+        #removes any None in the list because adding youtube music creates these Nones
+        spotify_id_history = [spotify_id for spotify_id in spotify_id_history if spotify_id] # adds the spotify ids to a list if they it exists for the song
+        last_five = spotify_id_history[-5:]
+        if len(last_five) == 0:
+            return False
+
+        # get the recommendations from spotify 
+        recommendations = await self.music_search.get_recommendations(last_five) #this is an object (well that's what i'd describe it as) it returns a list? dictionary? of recommended tracks from spotify
+        for track in recommendations.tracks:
+            self.autoplay_queue.append(f"{track.name} by {track.artists[0].name}")
+        return True
 
     @commands.command(aliases = ['p'], help="Plays a selected song from youtube")
     async def play(self, ctx, *args, internal = False):
@@ -301,12 +324,14 @@ class music_cog(commands.Cog):
             self.vc.stop()
             #resets variables
             await self.vc.disconnect()
-            self.vc = ""
-            self.history = []
+            self.history = [] 
             self.music_queue = []
-            self.is_loop_current = False
-            self.is_loop = False
+            self.autoplay_queue = []
             self.current_song = {}
+            self.is_loop = False
+            self.is_loop_current = False
+            self.is_shuffle = False
+            self.autoplay = False
             await ctx.message.add_reaction("⏹")
         else:
             await ctx.send("Are you in the voice channel? 🧐")
@@ -324,6 +349,15 @@ class music_cog(commands.Cog):
             for i in range(0, len(self.music_queue)):
                 retval +=f"`{i+1}:` {self.music_queue[i][0]['title']} - **{self.music_queue[i][0]['duration']}**\n"
                 playtime += int(self.music_queue[i][0]['duration_ms'])
+        
+        # if autoplay is on, show the first 10 songs in the autoplay queue
+        if self.autoplay:
+            retval += "\n**Autoplay**\n"
+            for i in range(0, len(self.autoplay_queue)):
+                retval +=f"- {self.autoplay_queue[i]}\n"
+                if i == 9:
+                    break
+        
         seconds, milliseconds = divmod(playtime, 1000)
         minutes, seconds = divmod(seconds, 60)    
         embed = discord.Embed(title = "Queue" if self.is_loop or self.is_loop_current else "Up next", description = retval)
@@ -527,30 +561,31 @@ class music_cog(commands.Cog):
             except ValueError:
                 ctx.send("Type R!clear <position to clear from> or R!clear to clear the entire queue")
             except IndexError:
-                ctx.send("That's out of range!")
-    
-       
+                ctx.send("That's out of range!") 
 
-    @commands.command(name = 'radio', help = "Uses spotify's recommendation API to auto add similar songs based on current songs")
+    @commands.command(aliases = ['autoplay', 'auto'], help = "Uses spotify's recommendation API to auto add similar songs based on current songs")
     async def radio(self, ctx):
+        # if the user is in the same voice channel as the bot and there is a song playing or song played
         if len(self.history) > 0 and ctx.author.voice.channel == self.current_song[1]:
-            spotify_id_history = []
-            #copy the spotify ids of the songs in self.history
-            for song in self.history:
-                spotify_id_history.append(song[0]['spotify_id'])
-            #get the last 5 song's spotify id
-            #removes any None in the list because adding youtube music creates these Nones
-            spotify_id_history = [i for i in spotify_id_history if i]
-            last_five = spotify_id_history[-5:]
-            if len(last_five) == 0:
-                await ctx.send("No spotify songs added, cannot create recommendations")
+            # if autoplay is on
+            if self.autoplay:
+                await ctx.send("Autoplay is now off")
+                self.autoplay = False
+                self.autoplay_queue = []
                 return
-            recommendations = await self.music_search.get_recommendations(last_five) #this is an object (well that's what i'd describe it as) it returns a list? dictionary? of recommended tracks from spotify
-            track_names = []
-            for track in recommendations.tracks:
-                track_names.append(track.name)
-            await ctx.send("Turning on the radio 📻🎵")
-            await self.add_radio_tracks(ctx, track_names)
+            else:
+                self.autoplay = True
+                status = await self.update_autoplay_queue()
+                if status == True:
+                    await ctx.send("Autoplay is now on")
+                    # if the music queue is empty, play the first song in the autoplay queue
+                    if len(self.music_queue) == 0:
+                        print(self.autoplay_queue[0])
+                        await self.play(ctx, self.autoplay_queue[0], internal = True)
+                        self.autoplay_queue.pop(0)                        
+                else:
+                    await ctx.send("Unable to enable autoplay; no non youtube sourced songs in queue")
+                return
         else:
             await ctx.send("Add some songs to start the radio! (it is recommended to add atleast 3 songs)")
 
