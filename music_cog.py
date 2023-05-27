@@ -50,8 +50,8 @@ class music_cog(commands.Cog):
                 return False
             #i chose to search song title and artist name to eliminate possibility of the bot playing a random youtube video
             youtube_video_info = self.music_search.search_youtube(f"{track.name} {track.artists[0].name}")
-            youtube_link = youtube_video_info['formats'][0]['url']
-            youtube_video_id = youtube_video_info['webpage_url_basename']
+            youtube_link = youtube_video_info['formats'][5]['url']
+            youtube_video_id = youtube_video_info['id']
             youtube_video_duration = youtube_video_info['duration']
             #for displaying the duration
             seconds, milliseconds = divmod(track.duration_ms, 1000)
@@ -76,7 +76,7 @@ class music_cog(commands.Cog):
             if not track:
                 return False
             song = {
-                'source': track['formats'][0]['url'], 
+                'source': track['formats'][5]['url'], 
                 'title': track['title'], 
                 'thumbnail': r"https://upload.wikimedia.org/wikipedia/commons/thumb/7/72/YouTube_social_white_square_%282017%29.svg/2048px-YouTube_social_white_square_%282017%29.svg.png", 
                 'color': discord.Color.from_rgb(255,60,30),
@@ -85,7 +85,7 @@ class music_cog(commands.Cog):
                 'trackname': track['title'], 
                 'artist': 'youtube', 
                 'spotify_id': None,
-                'youtube_id': track['webpage_url_basename'],
+                'youtube_id': track['id'],
                 'youtube_duration': track['duration']
             }
         return song
@@ -100,8 +100,8 @@ class music_cog(commands.Cog):
         for index, track in enumerate(playlist.tracks.items):
             try:
                 youtube_video_info = self.music_search.search_youtube(f"{track.track.name} {track.track.artists[0].name}")
-                youtube_link = youtube_video_info['formats'][0]['url']
-                youtube_video_id = youtube_video_info['webpage_url_basename']
+                youtube_link = youtube_video_info['formats'][5]['url']
+                youtube_video_id = youtube_video_info['id']
                 youtube_video_duration = youtube_video_info['duration']
                 seconds, milliseconds = divmod(track.track.duration_ms, 1000)
                 minutes, seconds = divmod(seconds, 60)

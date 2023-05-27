@@ -1,7 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 import tekore as tk
-from youtube_dl import YoutubeDL
+from yt_dlp import YoutubeDL
 import re
 import os
 from lyrics_extractor import SongLyrics
